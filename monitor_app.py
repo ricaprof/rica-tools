@@ -1,66 +1,105 @@
 import threading
 from time import sleep
+import psutil
 from rich.live import Live
-import readchar
 from rich.layout import Layout
 from rich.panel import Panel
+import readchar
+
+# Importação das suas views
 from views import view_resumo, view_cpu, view_ram, view_disco, view_rede
+
 class MonitorApp:
     def __init__(self):
         self.selected_index = 0
         self.options = ["Resumo Geral", "Processador (CPU)", "Memória RAM", "Disco", "Rede"]
         self.running = True
+        
+        # Cache de dados para evitar IO Blocking
+        self.data_cache = {
+            "cpu": [], "ram": None, "disco": None, "rede": None, "freq": None
+        }
+        
+        # Inicializa dados para não abrir vazio
+        self._update_data()
+
+    def _update_data(self):
+        """Coleta dados do sistema de forma rápida"""
+        self.data_cache["cpu"] = psutil.cpu_percent(percpu=True)
+        self.data_cache["ram"] = psutil.virtual_memory()
+        self.data_cache["disco"] = psutil.disk_usage('/')
+        self.data_cache["rede"] = psutil.net_io_counters()
+        self.data_cache["freq"] = psutil.cpu_freq()
+
+    def _background_collector(self):
+        """Thread 1: Atualiza o hardware a cada 1 segundo"""
+        while self.running:
+            self._update_data()
+            sleep(1)
+
+    def _input_handler(self):
+        """Thread 2: Captura teclas sem travar a tela"""
+        while self.running:
+            key = readchar.readkey()
+            if key == readchar.key.UP:
+                self.selected_index = (self.selected_index - 1) % len(self.options)
+            elif key == readchar.key.DOWN:
+                self.selected_index = (self.selected_index + 1) % len(self.options)
+            elif key.lower() == 'q' or key == readchar.key.ESC:
+                self.running = False
+
+    def render_content(self):
+        """Decide o que desenhar com base na seleção e nos dados do cache"""
+        opt = self.options[self.selected_index]
+        
+        # Mapeamento para as funções do views.py
+        # Passamos os dados do cache como argumentos
+        if opt == "Resumo Geral":
+            return view_resumo(self.data_cache)
+        elif opt == "Processador (CPU)":
+            return view_cpu(self.data_cache["cpu"], self.data_cache["freq"])
+        elif opt == "Memória RAM":
+            return view_ram(self.data_cache["ram"])
+        elif opt == "Disco":
+            return view_disco(self.data_cache["disco"])
+        elif opt == "Rede":
+            return view_rede(self.data_cache["rede"])
+        
+        return Panel("Selecione uma opção válida.")
 
     def get_layout(self):
+        """Monta o esqueleto da UI (Menu lateral + Conteúdo)"""
         layout = Layout()
         layout.split_row(
             Layout(name="menu", size=30),
             Layout(name="conteudo")
         )
         
-        menu_text = ""
+        menu_items = []
         for i, opt in enumerate(self.options):
             if i == self.selected_index:
-                menu_text += f"[bold reverse cyan] > {opt} [/]\n"
+                menu_items.append(f"[bold reverse cyan] > {opt} [/]")
             else:
-                menu_text += f"   {opt} \n"
+                menu_items.append(f"   {opt} ")
         
-        layout["menu"].update(Panel(menu_text, title="Menu", border_style="cyan"))
+        layout["menu"].update(Panel("\n".join(menu_items), title="Menu", border_style="cyan"))
         layout["conteudo"].update(self.render_content())
         return layout
 
-    def render_content(self):
-        opt = self.options[self.selected_index]
-        mapping = {
-            "Resumo Geral": view_resumo,
-            "Processador (CPU)": view_cpu,
-            "Memória RAM": view_ram,
-            "Disco": view_disco,
-            "Rede": view_rede
-        }
-        return mapping[opt]()
-
     def run(self):
-        # Thread para capturar o teclado sem travar a atualização da tela
-        def check_input():
-            while self.running:
-                key = readchar.readkey()
-                if key == readchar.key.UP:
-                    self.selected_index = (self.selected_index - 1) % len(self.options)
-                elif key == readchar.key.DOWN:
-                    self.selected_index = (self.selected_index + 1) % len(self.options)
-                elif key.lower() == 'q' or key == readchar.key.ESC:
-                    self.running = False
+        """Loop principal de renderização"""
+        # Inicia as threads de suporte
+        threading.Thread(target=self._background_collector, daemon=True).start()
+        threading.Thread(target=self._input_handler, daemon=True).start()
 
-        # Inicia a thread de input como "daemon" para fechar junto com o app
-        input_thread = threading.Thread(target=check_input, daemon=True)
-        input_thread.start()
-
-        # O Live agora atualiza a tela automaticamente 4 vezes por segundo
-        # independente de você apertar teclas ou não.
-        with Live(self.get_layout(), refresh_per_second=0.5, screen=True) as live:
+        # O Live gerencia a tela. screen=True cria o efeito de 'App' (limpa o terminal ao sair)
+        # refresh_per_second controla a fluidez da interface
+        with Live(self.get_layout(), refresh_per_second=10, screen=True) as live:
             while self.running:
-                #sleep(2)  # Pequena pausa para reduzir uso de CPU
+                # O loop principal agora apenas redesenha a tela com os dados mais recentes
                 live.update(self.get_layout())
-                # O loop principal apenas mantém o Live vivo
-                # psutil será chamado dentro de get_layout() -> render_content()
+                sleep(0.1) # Taxa de atualização da interface (100ms)
+
+if __name__ == "__main__":
+    app = MonitorApp()
+    app.run()

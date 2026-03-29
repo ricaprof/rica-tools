@@ -6,16 +6,47 @@ from rich.text import Text
 from rich import box
 
 
-def view_resumo():
-    table = Table(show_header=False, expand=True, border_style="dim")
-    cpu = psutil.cpu_percent(interval=1)
-    ram = psutil.virtual_memory().percent
-    table.add_row("[cyan]CPU[/]", f"[bold]{cpu}%[/]")
-    table.add_row("[magenta]RAM[/]", f"[bold]{ram}%[/]")
-    return Panel(table, title="Status do Sistema", subtitle="Setas ↑↓ para navegar | 'q' para sair")
-def view_cpu():
-    usage = psutil.cpu_percent(percpu=True, interval=1)
-    freq = psutil.cpu_freq()
+def view_resumo(data_cache):
+    """
+    Recebe o dicionário completo e mostra os dois indicadores principais.
+    """
+    table = Table.grid(expand=True)
+    table.add_column(width=10)
+    table.add_column(ratio=1)
+    
+    # Pegamos os dados do cache (já coletados em background)
+    # Calculamos a média da lista de CPUs para o resumo
+    cpu_list = data_cache.get("cpu", [0])
+    cpu_avg = sum(cpu_list) / len(cpu_list) if cpu_list else 0
+    ram_pct = data_cache.get("ram").percent if data_cache.get("ram") else 0
+
+    # Linha da CPU
+    cpu_bar = ProgressBar(total=100, completed=cpu_avg, width=None)
+    table.add_row(
+        Text(" CPU ", style="bold cyan"),
+        cpu_bar,
+        Text(f" {cpu_avg:>5.1f}%", style="bold cyan")
+    )
+    
+    # Linha da RAM
+    ram_bar = ProgressBar(total=100, completed=ram_pct, width=None)
+    table.add_row(
+        Text(" RAM ", style="bold magenta"),
+        ram_bar,
+        Text(f" {ram_pct:>5.1f}%", style="bold magenta")
+    )
+
+    return Panel(
+        table, 
+        title="[bold white]Resumo do Sistema[/]", 
+        subtitle="[dim]Dados atualizados em tempo real[/]",
+        border_style="blue",
+        box=box.ROUNDED
+    )
+
+def view_cpu(usage, freq):
+    #usage = psutil.cpu_percent(percpu=True, interval=1)
+    #freq = psutil.cpu_freq()
     
     # Criamos a grade principal para os núcleos
     grid = Table.grid(expand=True)
@@ -67,8 +98,8 @@ def view_cpu():
         border_style="green",
         box=box.ROUNDED
     )
-def view_ram():
-    ram = psutil.virtual_memory()
+def view_ram(ram):
+    #ram = psutil.virtual_memory()
     bar_width = 30
     filled = int(ram.percent / 100 * bar_width)
     bar = "█" * filled + "░" * (bar_width - filled)
