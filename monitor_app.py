@@ -4,7 +4,10 @@ import psutil
 from rich.live import Live
 from rich.layout import Layout
 from rich.panel import Panel
+from rich import box
+from rich.text import Text
 import readchar
+from datetime import datetime
 
 # Importação das suas views
 from views import view_resumo, view_cpu, view_ram, view_disco, view_rede
@@ -47,6 +50,7 @@ class MonitorApp:
                 self.selected_index = (self.selected_index + 1) % len(self.options)
             elif key.lower() == 'q' or key == readchar.key.ESC:
                 self.running = False
+                #print("Desligando")
 
     def render_content(self):
         """Decide o que desenhar com base na seleção e nos dados do cache"""
@@ -68,22 +72,52 @@ class MonitorApp:
         return Panel("Selecione uma opção válida.")
 
     def get_layout(self):
-        """Monta o esqueleto da UI (Menu lateral + Conteúdo)"""
         layout = Layout()
-        layout.split_row(
+        
+        # Divide a tela em 3 partes verticais
+        layout.split_column(
+            Layout(name="header", size=3),
+            Layout(name="body"),
+            Layout(name="footer", size=3)
+        )
+        
+        # Divide o corpo em Menu e Conteúdo
+        layout["body"].split_row(
             Layout(name="menu", size=30),
             Layout(name="conteudo")
         )
-        
+
+        # 1. Renderização do Header (Relógio + Título)
+        hora_atual = datetime.now().strftime("%H:%M:%S")
+        layout["header"].update(
+            Panel(
+                f"[bold cyan]RICA-MONITOR v1.0[/] | [dim]Sistema Ativo[/] [bold white]—[/] [yellow]{hora_atual}[/]",
+                border_style="blue",
+                box=box.ROUNDED
+            )
+        )
+
+        # 2. Renderização do Menu Lateral
         menu_items = []
         for i, opt in enumerate(self.options):
             if i == self.selected_index:
                 menu_items.append(f"[bold reverse cyan] > {opt} [/]")
             else:
                 menu_items.append(f"   {opt} ")
-        
         layout["menu"].update(Panel("\n".join(menu_items), title="Menu", border_style="cyan"))
+
+        # 3. Conteúdo Central (Chama as views)
         layout["conteudo"].update(self.render_content())
+
+        # 4. Renderização do Footer (Atalhos)
+        footer_text = Text.assemble(
+            (" ARROWS ", "bold black on cyan"), " Navegar  ",
+            (" Q ", "bold black on red"), " Sair  ",
+            (" ESC ", "bold black on white"), " Fechar ",
+            justify="center"
+        )
+        layout["footer"].update(Panel(footer_text, border_style="dim"))
+
         return layout
 
     def run(self):
