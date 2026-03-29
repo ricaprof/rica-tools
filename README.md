@@ -39,7 +39,7 @@ Diferente de monitores simples que travam a interface ao ler o disco ou rede, o 
 
 1.  **Clone o repositório:**
     ```bash
-    git clone [https://github.com/seu-usuario/rica-tools.git](https://github.com/seu-usuario/rica-tools.git)
+    git clone https://github.com/ricaprof/rica-tools.git
     cd rica-tools
     ```
 
